@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { withBase } from "@/lib/base-path";
 import { BookOpen, Home, Play, Settings, Trophy } from "lucide-react";
 
 const links = [
@@ -27,7 +28,7 @@ export function Header() {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/mascot/idle.jpg"
+              src={withBase("/mascot/idle.jpg")}
               alt=""
               className="h-full w-full object-cover object-top"
             />

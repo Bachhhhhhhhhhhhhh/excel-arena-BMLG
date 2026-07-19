@@ -5,11 +5,11 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export type MascotMood = "idle" | "happy" | "sad" | "combo" | "think" | "boss";
 
+/** Paths relative to public/ — Next.js auto-prefixes basePath for Image */
 const SRC: Record<MascotMood, string> = {
   idle: "/mascot/idle.jpg",
   happy: "/mascot/happy.jpg",
   sad: "/mascot/sad.jpg",
-  // combo uses happy base + extra glow/particles in UI
   combo: "/mascot/happy.jpg",
   think: "/mascot/think.jpg",
   boss: "/mascot/think.jpg",
