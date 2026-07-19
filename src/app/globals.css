@@ -3,25 +3,149 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --primary-from: #a8d8ff;
+  --primary-to: #7ec8ff;
+  --secondary: #e8f4ff;
+  --accent: #5bb8ff;
+  --bg-from: #f0f9ff;
+  --bg-to: #e0f2fe;
+  --text: #1e3a5f;
+  --text-muted: #4a6fa5;
+  --success: #7dd3fc;
+  --error: #fca5a5;
+  --white: #ffffff;
+  --glass: rgba(255, 255, 255, 0.72);
+  --glow: 0 0 24px rgba(91, 184, 255, 0.35);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text);
+  background-color: var(--bg-from);
+  background-image:
+    radial-gradient(ellipse 90% 60% at 50% -10%, rgba(168, 216, 255, 0.55) 0%, transparent 55%),
+    radial-gradient(circle at 12% 80%, rgba(126, 200, 255, 0.25) 0%, transparent 28%),
+    radial-gradient(circle at 88% 70%, rgba(232, 244, 255, 0.9) 0%, transparent 32%),
+    linear-gradient(180deg, #f0f9ff 0%, #e8f4ff 45%, #e0f2fe 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  font-family: var(--font-jakarta), "Segoe UI", system-ui, sans-serif;
+}
+
+code,
+.font-mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+::selection {
+  background: #a8d8ff;
+  color: #1e3a5f;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #a8d8ff, #7ec8ff);
+  border-radius: 999px;
+  border: 2px solid #f0f9ff;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+  .glass-ice {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1.5px solid rgba(168, 216, 255, 0.55);
+  }
+  .glow-soft {
+    box-shadow:
+      0 8px 32px -8px rgba(91, 184, 255, 0.28),
+      0 0 0 1px rgba(168, 216, 255, 0.35);
+  }
+  .glow-hover {
+    box-shadow:
+      0 12px 40px -6px rgba(91, 184, 255, 0.42),
+      0 0 20px rgba(126, 200, 255, 0.35);
+  }
+  .text-ice {
+    color: #1e3a5f;
+  }
+  .text-ice-muted {
+    color: #4a6fa5;
+  }
+  .gradient-primary {
+    background-image: linear-gradient(135deg, #a8d8ff 0%, #7ec8ff 50%, #5bb8ff 100%);
+  }
+  .gradient-text-ice {
+    background-image: linear-gradient(120deg, #5bb8ff, #7ec8ff, #a8d8ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* Ambient motion */
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-16px); }
+}
+@keyframes float-bubble {
+  0% { transform: translateY(0) scale(1); opacity: 0.35; }
+  50% { opacity: 0.55; }
+  100% { transform: translateY(-100vh) scale(1.15); opacity: 0; }
+}
+@keyframes sparkle-soft {
+  0%, 100% { opacity: 0.25; transform: scale(0.85); }
+  50% { opacity: 0.9; transform: scale(1.1); }
+}
+@keyframes soft-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(91, 184, 255, 0.35); }
+  50% { box-shadow: 0 0 0 10px rgba(91, 184, 255, 0); }
+}
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes bob-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.animate-float-y { animation: float-y 5s ease-in-out infinite; }
+.animate-sparkle-soft { animation: sparkle-soft 2.4s ease-in-out infinite; }
+.animate-soft-pulse { animation: soft-pulse-glow 2.2s ease-in-out infinite; }
+.animate-bob-soft { animation: bob-soft 3s ease-in-out infinite; }
+.delay-1 { animation-delay: 0.4s; }
+.delay-2 { animation-delay: 0.9s; }
+.delay-3 { animation-delay: 1.4s; }
+.delay-4 { animation-delay: 1.9s; }
+
+/* Ice input focus */
+.ice-input:focus {
+  border-color: #7ec8ff;
+  box-shadow:
+    0 0 0 4px rgba(168, 216, 255, 0.45),
+    0 0 16px rgba(91, 184, 255, 0.2);
+}
+
+/* Light rays from top */
+.light-ray {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, transparent 28%),
+    radial-gradient(ellipse 70% 40% at 50% 0%, rgba(168, 216, 255, 0.4), transparent 70%);
 }
