@@ -4,19 +4,32 @@ Game web luyện **hàm Excel** vui nhộn: thư viện **≥ 100 hàm**, nhiề
 
 **Stack:** Next.js 14 (App Router) · TypeScript · Tailwind CSS · Framer Motion · Zustand · SheetJS (xlsx)
 
+**Repo:** https://github.com/Bachhhhhhhhhhhhhh/excel-arena-BMLG
+
+> ⚠️ **GitHub chỉ lưu source code**, không tự “chạy” website.  
+> Muốn có link chơi online → deploy **Vercel** (miễn phí, 2 phút).
+
 ---
 
-## Chạy nhanh
+## Deploy online (Vercel) — khuyến nghị
+
+1. Vào [vercel.com/new](https://vercel.com/new) → đăng nhập bằng **GitHub**
+2. **Import** repo `Bachhhhhhhhhhhhhh/excel-arena-BMLG`
+3. Framework: **Next.js** (tự nhận) · Root: `/` · không cần env
+4. Bấm **Deploy** → nhận URL dạng `https://excel-arena-bmlg.vercel.app`
+
+Mỗi lần `git push` lên `main`, Vercel tự build lại.
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Bachhhhhhhhhhhhhh/excel-arena-BMLG)
+
+---
+
+## Chạy local
 
 ```bash
-# Clone
 git clone https://github.com/Bachhhhhhhhhhhhhh/excel-arena-BMLG.git
 cd excel-arena-BMLG
-
-# Cài dependency
 npm install
-
-# Dev server
 npm run dev
 ```
 
@@ -26,12 +39,6 @@ Mở [http://localhost:3000](http://localhost:3000).
 npm run build   # production build
 npm start       # chạy sau build
 ```
-
-### Deploy Vercel
-
-1. Import repo trên [vercel.com](https://vercel.com)
-2. Framework: Next.js (tự nhận)
-3. Deploy — không cần env bắt buộc cho bản local-storage
 
 ---
 
