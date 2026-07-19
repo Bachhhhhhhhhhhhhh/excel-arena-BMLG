@@ -7,19 +7,22 @@ export interface SheetsPayload {
 }
 
 /**
- * Gửi 1 dòng kết quả tới Google Apps Script Web App.
- * Web App cần được deploy "Anyone" + doPost append vào sheet.
+ * POST tới Google Apps Script Web App.
+ * Dùng mode no-cors vì Apps Script thường không trả CORS headers
+ * (đặc biệt khi host trên GitHub Pages).
  */
 export async function appendToGoogleSheets(
   webAppUrl: string,
   payload: SheetsPayload
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!webAppUrl?.trim()) {
-    return { ok: false, error: "Chưa cấu hình Web App URL" };
+  const url = webAppUrl.trim();
+  if (!url) return { ok: false, error: "Chưa cấu hình Web App URL" };
+  if (!/^https:\/\//i.test(url)) {
+    return { ok: false, error: "URL phải bắt đầu bằng https://" };
   }
 
   const { record, playerName } = payload;
-  const body = {
+  const body = JSON.stringify({
     playerName,
     answeredAt: record.answeredAt,
     mode: MODE_LABELS[record.mode],
@@ -32,23 +35,16 @@ export async function appendToGoogleSheets(
     pointsEarned: record.pointsEarned,
     combo: record.combo,
     questionId: record.questionId,
-  };
+  });
 
   try {
-    // no-cors friendly: Apps Script often needs mode no-cors OR proper CORS headers
-    const res = await fetch(webAppUrl, {
+    await fetch(url, {
       method: "POST",
+      mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(body),
-      // redirect follow for Apps Script
-      redirect: "follow",
+      body,
     });
-
-    // Apps Script may return opaque; treat network success as ok
-    if (!res.ok && res.type !== "opaque") {
-      const text = await res.text().catch(() => "");
-      return { ok: false, error: text || `HTTP ${res.status}` };
-    }
+    // no-cors → opaque response, assume success if no throw
     return { ok: true };
   } catch (e) {
     return {

@@ -1,41 +1,53 @@
 /**
- * Normalize Excel formula for loose comparison:
- * - trim, uppercase function names area, remove spaces around operators
- * - unify quotes and separators
+ * Normalize Excel formula for loose comparison.
  */
 export function normalizeFormula(input: string): string {
   let s = input.trim();
   if (!s) return "";
-  // Allow answers with or without leading =
-  if (s.startsWith("=")) s = s.slice(1);
-  s = s.trim();
 
-  // Collapse whitespace
-  s = s.replace(/\s+/g, " ");
+  // strip all leading = and fullwidth ＝
+  s = s.replace(/^[=\uFF1D]+/, "").trim();
 
-  // Remove spaces around common formula tokens
+  // smart quotes → ascii
   s = s
-    .replace(/\s*([(),;:+\-*/^=<>&])\s*/g, "$1")
-    .replace(/\s+/g, "");
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'");
 
-  // Unify double quotes
-  s = s.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  // fullwidth punctuation → ascii
+  s = s
+    .replace(/\uFF08/g, "(")
+    .replace(/\uFF09/g, ")")
+    .replace(/\uFF0C/g, ",")
+    .replace(/\uFF1B/g, ";")
+    .replace(/\uFF1A/g, ":")
+    .replace(/\u3000/g, " ")
+    .replace(/\uFF0E/g, ".");
 
-  // Uppercase (Excel formulas are case-insensitive)
+  // collapse whitespace then remove spaces around tokens
+  s = s.replace(/\s+/g, " ");
+  s = s.replace(/\s*([(),;:+\-*/^=<>&])\s*/g, "$1");
+  s = s.replace(/\s+/g, "");
+
+  // case-insensitive
   s = s.toUpperCase();
 
-  // Vietnamese locale may use ; as arg separator — also accept ,
-  // Compare both variants later via alternatives
   return s;
 }
 
-/** Build separator variants (comma vs semicolon) */
 function separatorVariants(normalized: string): string[] {
   const variants = new Set<string>();
   variants.add(normalized);
   variants.add(normalized.replace(/,/g, ";"));
   variants.add(normalized.replace(/;/g, ","));
+  // also strip outer quotes differences already handled
   return Array.from(variants);
+}
+
+/** Optional: ignore sheet! prefixes and $ absolute refs for looser match */
+function stripAbsoluteNoise(s: string): string {
+  return s
+    .replace(/\$([A-Z]+)/g, "$1")
+    .replace(/\$(\d+)/g, "$1");
 }
 
 export function checkFormulaAnswer(
@@ -46,13 +58,25 @@ export function checkFormulaAnswer(
   const userNorm = normalizeFormula(userAnswer);
   if (!userNorm) return false;
 
-  const candidates = [correctAnswer, ...acceptedAnswers].flatMap((a) =>
-    separatorVariants(normalizeFormula(a))
-  );
+  const allCorrect = [correctAnswer, ...acceptedAnswers];
+  const candidates = allCorrect.flatMap((a) => {
+    const n = normalizeFormula(a);
+    return [
+      ...separatorVariants(n),
+      ...separatorVariants(stripAbsoluteNoise(n)),
+    ];
+  });
 
-  const userVariants = separatorVariants(userNorm);
+  const userVariants = [
+    ...separatorVariants(userNorm),
+    ...separatorVariants(stripAbsoluteNoise(userNorm)),
+  ];
 
-  return userVariants.some((u) => candidates.includes(u));
+  // exact match among variants
+  if (userVariants.some((u) => candidates.includes(u))) return true;
+
+  // allow user answer that ends with same formula body (e.g. extra spaces already stripped)
+  return false;
 }
 
 export function pointsForDifficulty(

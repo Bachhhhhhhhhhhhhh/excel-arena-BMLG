@@ -7,6 +7,8 @@ export function exportHistoryToExcel(
   leaderboard: LeaderboardEntry[],
   playerName: string
 ) {
+  if (typeof window === "undefined") return;
+
   const wb = XLSX.utils.book_new();
 
   const historyRows = history.map((h, i) => ({

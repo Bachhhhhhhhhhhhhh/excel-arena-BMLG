@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import confetti from "canvas-confetti";
 import { useGameStore } from "@/store/game-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,32 +62,51 @@ export function GameBoard() {
 
   useEffect(() => {
     if (!lastResult) return;
+    let cancelled = false;
     if (lastResult.isCorrect) {
       setFloatPts(lastResult.pointsEarned);
-      const colors = ["#A8D8FF", "#7EC8FF", "#5BB8FF", "#7DD3FC", "#FFFFFF", "#E8F4FF"];
-      confetti({
-        particleCount: 60 + Math.min(combo, 10) * 8,
-        spread: 75,
-        origin: { y: 0.62 },
-        colors,
-        scalar: 1.05,
-      });
-      confetti({
-        particleCount: 20,
-        angle: 60,
-        spread: 50,
-        origin: { x: 0, y: 0.7 },
-        colors,
-      });
-      confetti({
-        particleCount: 20,
-        angle: 120,
-        spread: 50,
-        origin: { x: 1, y: 0.7 },
-        colors,
-      });
+      const colors = [
+        "#A8D8FF",
+        "#7EC8FF",
+        "#5BB8FF",
+        "#7DD3FC",
+        "#FFFFFF",
+        "#E8F4FF",
+      ];
+      void import("canvas-confetti")
+        .then((mod) => {
+          if (cancelled) return;
+          const confetti = mod.default;
+          confetti({
+            particleCount: 60 + Math.min(combo, 10) * 8,
+            spread: 75,
+            origin: { y: 0.62 },
+            colors,
+            scalar: 1.05,
+          });
+          confetti({
+            particleCount: 18,
+            angle: 60,
+            spread: 50,
+            origin: { x: 0, y: 0.7 },
+            colors,
+          });
+          confetti({
+            particleCount: 18,
+            angle: 120,
+            spread: 50,
+            origin: { x: 1, y: 0.7 },
+            colors,
+          });
+        })
+        .catch(() => {
+          /* confetti optional */
+        });
       const t = setTimeout(() => setFloatPts(null), 1200);
-      return () => clearTimeout(t);
+      return () => {
+        cancelled = true;
+        clearTimeout(t);
+      };
     } else {
       setShake(true);
       const t = setTimeout(() => setShake(false), 500);
@@ -99,7 +117,7 @@ export function GameBoard() {
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (status !== "playing" || !answer.trim()) return;
-    await submitAnswer(answer);
+    await submitAnswer(answer.trim());
   };
 
   if (status === "finished") {

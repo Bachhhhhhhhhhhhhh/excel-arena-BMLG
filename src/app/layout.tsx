@@ -4,23 +4,26 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { FloatingDecor } from "@/components/ui/FloatingDecor";
+import { StoreHydration } from "@/components/providers/StoreHydration";
 
 const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin", "vietnamese"],
+  subsets: ["latin", "latin-ext"],
   variable: "--font-jakarta",
   weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
 });
 
 const geistMono = localFont({
   src: "./fonts/GeistMonoVF.woff",
   variable: "--font-geist-mono",
   weight: "100 900",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Excel Arena – Công Thức Chiến Binh",
+  title: "Excel Arena – Cong Thuc Chien Binh",
   description:
-    "Luyện hàm Excel với vibe anime trong trẻo: 100+ hàm, challenge, boss fight, xuất Excel & Google Sheets.",
+    "Luyen ham Excel: 100+ ham, challenge, boss fight, xuat Excel & Google Sheets.",
 };
 
 export default function RootLayout({
@@ -33,6 +36,7 @@ export default function RootLayout({
       <body
         className={`${jakarta.variable} ${geistMono.variable} font-sans antialiased`}
       >
+        <StoreHydration />
         <FloatingDecor />
         <div className="relative z-10">
           <Header />

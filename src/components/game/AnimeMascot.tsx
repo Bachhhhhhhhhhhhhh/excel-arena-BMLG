@@ -1,11 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
+import { withBase } from "@/lib/base-path";
 
 export type MascotMood = "idle" | "happy" | "sad" | "combo" | "think" | "boss";
 
-/** Paths relative to public/ — Next.js auto-prefixes basePath for Image */
 const SRC: Record<MascotMood, string> = {
   idle: "/mascot/idle.jpg",
   happy: "/mascot/happy.jpg",
@@ -25,9 +24,9 @@ const SPEECH: Record<MascotMood, string> = {
 };
 
 const SIZES = {
-  sm: { box: "h-28 w-28 sm:h-32 sm:w-32", img: 128 },
-  md: { box: "h-44 w-44 sm:h-52 sm:w-52", img: 208 },
-  lg: { box: "h-56 w-56 sm:h-64 sm:w-64", img: 256 },
+  sm: { box: "h-28 w-28 sm:h-32 sm:w-32" },
+  md: { box: "h-44 w-44 sm:h-52 sm:w-52" },
+  lg: { box: "h-56 w-56 sm:h-64 sm:w-64" },
 };
 
 interface Props {
@@ -47,6 +46,7 @@ export function AnimeMascot({
 }: Props) {
   const text = speech ?? SPEECH[mood];
   const s = SIZES[size];
+  const imgSrc = withBase(SRC[mood]);
   const glow =
     mood === "happy" || mood === "combo" || mood === "boss"
       ? "shadow-[0_0_40px_rgba(91,184,255,0.55)]"
@@ -90,7 +90,6 @@ export function AnimeMascot({
         }}
         className={`relative ${s.box}`}
       >
-        {/* soft aura */}
         <span
           className={`absolute inset-2 rounded-full bg-[#A8D8FF]/35 blur-2xl ${
             mood === "combo" ? "animate-soft-pulse" : ""
@@ -99,13 +98,15 @@ export function AnimeMascot({
         <div
           className={`relative h-full w-full overflow-hidden rounded-full border-[3px] border-white ${glow} ring-2 ring-[#A8D8FF]/60`}
         >
-          <Image
-            src={SRC[mood]}
+          {/* plain <img> avoids next/image preload path bugs with basePath on GH Pages */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imgSrc}
             alt="Mascot Excel Arena"
-            width={s.img}
-            height={s.img}
+            width={256}
+            height={256}
             className="h-full w-full object-cover object-top"
-            priority={size === "lg"}
+            draggable={false}
           />
         </div>
 
@@ -141,9 +142,6 @@ export function AnimeMascot({
   );
 }
 
-/** Alias for older imports */
-export function WarriorCharacter(
-  props: Props & { mood?: MascotMood | "idle" | "happy" | "sad" | "boss" | "think" }
-) {
+export function WarriorCharacter(props: Props) {
   return <AnimeMascot {...props} />;
 }

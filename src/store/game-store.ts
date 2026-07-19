@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   AnswerRecord,
   Badge,
@@ -44,13 +44,14 @@ interface GameState {
   } | null;
   sessionCorrect: number;
   sessionTotal: number;
+  _hasHydrated: boolean;
+  setHasHydrated: (v: boolean) => void;
 
   history: AnswerRecord[];
   leaderboard: LeaderboardEntry[];
   badges: Badge[];
   sheets: GoogleSheetsConfig;
 
-  // actions
   startPractice: (category: FunctionCategory | "all") => void;
   startChallenge: () => void;
   startBoss: () => void;
@@ -72,15 +73,49 @@ function pickQueue(
   if (mode === "boss") {
     const hard = getQuestionsByDifficulty("hard");
     const medium = getQuestionsByDifficulty("medium");
-    return getRandomQuestions(12, {}).length
-      ? [...hard, ...medium].sort(() => Math.random() - 0.5).slice(0, 12)
-      : getRandomQuestions(12);
+    const mixed = [...hard, ...medium].sort(() => Math.random() - 0.5);
+    if (mixed.length >= 8) return mixed.slice(0, 12);
+    return getRandomQuestions(12);
   }
-  if (mode === "challenge") return getRandomQuestions(200);
-  // practice
+  if (mode === "challenge") return getRandomQuestions(80);
   if (category === "all") return getRandomQuestions(50);
   const catQs = getQuestionsByCategory(category);
-  return catQs.sort(() => Math.random() - 0.5);
+  if (catQs.length === 0) return getRandomQuestions(20);
+  return [...catQs].sort(() => Math.random() - 0.5);
+}
+
+function mergeBadges(stored: Badge[] | undefined): Badge[] {
+  const unlockedMap = new Map(
+    (stored || []).filter((b) => b.unlockedAt).map((b) => [b.id, b.unlockedAt!])
+  );
+  return BADGE_DEFS.map((def) => ({
+    ...def,
+    unlockedAt: unlockedMap.get(def.id),
+  }));
+}
+
+function startSession(
+  set: (p: Partial<GameState>) => void,
+  mode: GameMode,
+  category: FunctionCategory | "all",
+  extras: Partial<GameState>
+) {
+  const queue = pickQueue(mode, category);
+  set({
+    mode,
+    categoryFilter: category,
+    status: queue.length ? "playing" : "finished",
+    score: 0,
+    combo: 0,
+    maxCombo: 0,
+    queue,
+    questionIndex: 0,
+    currentQuestion: queue[0] ?? null,
+    lastResult: null,
+    sessionCorrect: 0,
+    sessionTotal: 0,
+    ...extras,
+  });
 }
 
 export const useGameStore = create<GameState>()(
@@ -103,90 +138,25 @@ export const useGameStore = create<GameState>()(
       lastResult: null,
       sessionCorrect: 0,
       sessionTotal: 0,
+      _hasHydrated: false,
+      setHasHydrated: (v) => set({ _hasHydrated: v }),
+
       history: [],
       leaderboard: [],
       badges: BADGE_DEFS.map((b) => ({ ...b })),
       sheets: { webAppUrl: "", enabled: false },
 
-      startPractice: (category) => {
-        const queue = pickQueue("practice", category);
-        set({
-          mode: "practice",
-          categoryFilter: category,
-          status: "playing",
-          score: 0,
-          combo: 0,
-          maxCombo: 0,
-          lives: 999,
-          timeLeft: 0,
-          queue,
-          questionIndex: 0,
-          currentQuestion: queue[0] ?? null,
-          lastResult: null,
-          sessionCorrect: 0,
-          sessionTotal: 0,
-        });
-      },
+      startPractice: (category) =>
+        startSession(set, "practice", category, { lives: 999, timeLeft: 0 }),
 
-      startChallenge: () => {
-        const queue = pickQueue("challenge", "all");
-        set({
-          mode: "challenge",
-          categoryFilter: "all",
-          status: "playing",
-          score: 0,
-          combo: 0,
-          maxCombo: 0,
-          lives: 999,
-          timeLeft: 60,
-          queue,
-          questionIndex: 0,
-          currentQuestion: queue[0] ?? null,
-          lastResult: null,
-          sessionCorrect: 0,
-          sessionTotal: 0,
-        });
-      },
+      startChallenge: () =>
+        startSession(set, "challenge", "all", { lives: 999, timeLeft: 60 }),
 
-      startBoss: () => {
-        const queue = pickQueue("boss", "all");
-        set({
-          mode: "boss",
-          categoryFilter: "all",
-          status: "playing",
-          score: 0,
-          combo: 0,
-          maxCombo: 0,
-          lives: 3,
-          timeLeft: 0,
-          queue,
-          questionIndex: 0,
-          currentQuestion: queue[0] ?? null,
-          lastResult: null,
-          sessionCorrect: 0,
-          sessionTotal: 0,
-        });
-      },
+      startBoss: () =>
+        startSession(set, "boss", "all", { lives: 3, timeLeft: 0 }),
 
-      startDaily: () => {
-        const queue = pickQueue("daily", "all");
-        set({
-          mode: "daily",
-          categoryFilter: "all",
-          status: "playing",
-          score: 0,
-          combo: 0,
-          maxCombo: 0,
-          lives: 999,
-          timeLeft: 0,
-          queue,
-          questionIndex: 0,
-          currentQuestion: queue[0] ?? null,
-          lastResult: null,
-          sessionCorrect: 0,
-          sessionTotal: 0,
-        });
-      },
+      startDaily: () =>
+        startSession(set, "daily", "all", { lives: 999, timeLeft: 0 }),
 
       submitAnswer: async (answer) => {
         const state = get();
@@ -206,7 +176,7 @@ export const useGameStore = create<GameState>()(
         const newScore = state.score + pointsEarned;
         const newLives =
           state.mode === "boss" && !isCorrect
-            ? state.lives - 1
+            ? Math.max(0, state.lives - 1)
             : state.lives;
 
         const record: AnswerRecord = {
@@ -219,11 +189,11 @@ export const useGameStore = create<GameState>()(
           isCorrect,
           pointsEarned,
           combo: newCombo,
-          mode: state.mode!,
+          mode: state.mode ?? "practice",
           answeredAt: new Date().toISOString(),
         };
 
-        const history = [...state.history, record];
+        const history = [...state.history, record].slice(-500);
         const badgeIds = evaluateBadges(
           history,
           newScore,
@@ -236,6 +206,7 @@ export const useGameStore = create<GameState>()(
             : b
         );
 
+        // Always show feedback first (including boss last life)
         set({
           score: newScore,
           combo: newCombo,
@@ -249,25 +220,30 @@ export const useGameStore = create<GameState>()(
           sessionTotal: state.sessionTotal + 1,
         });
 
-        // Google Sheets sync
         const { sheets, playerName } = get();
         if (sheets.enabled && sheets.webAppUrl) {
-          const res = await appendToGoogleSheets(sheets.webAppUrl, {
-            playerName,
-            record,
-          });
-          set({
-            sheets: {
-              ...get().sheets,
-              lastSyncAt: res.ok ? new Date().toISOString() : get().sheets.lastSyncAt,
-              lastError: res.ok ? undefined : res.error,
-            },
-          });
-        }
-
-        // Boss death
-        if (get().mode === "boss" && get().lives <= 0) {
-          get().endSession();
+          try {
+            const res = await appendToGoogleSheets(sheets.webAppUrl, {
+              playerName,
+              record,
+            });
+            set({
+              sheets: {
+                ...get().sheets,
+                lastSyncAt: res.ok
+                  ? new Date().toISOString()
+                  : get().sheets.lastSyncAt,
+                lastError: res.ok ? undefined : res.error,
+              },
+            });
+          } catch {
+            set({
+              sheets: {
+                ...get().sheets,
+                lastError: "Không gửi được tới Google Sheets",
+              },
+            });
+          }
         }
       },
 
@@ -275,16 +251,9 @@ export const useGameStore = create<GameState>()(
         const state = get();
         if (state.status === "finished") return;
 
-        // Boss: wrong answer already handled lives
-        const nextIndex = state.questionIndex + 1;
-        const queue = state.queue;
-
-        // Daily / boss finite; practice loops; challenge uses timer
-        if (state.mode === "daily" || state.mode === "boss") {
-          if (nextIndex >= queue.length || (state.mode === "boss" && state.lives <= 0)) {
-            get().endSession();
-            return;
-          }
+        if (state.mode === "boss" && state.lives <= 0) {
+          get().endSession();
+          return;
         }
 
         if (state.mode === "challenge" && state.timeLeft <= 0) {
@@ -292,14 +261,22 @@ export const useGameStore = create<GameState>()(
           return;
         }
 
-        // Refill challenge queue if needed
-        let nextQueue = queue;
-        if (state.mode === "challenge" && nextIndex >= queue.length - 5) {
-          nextQueue = [...queue, ...getRandomQuestions(50)];
+        const nextIndex = state.questionIndex + 1;
+        let nextQueue = state.queue;
+
+        if (state.mode === "daily" || state.mode === "boss") {
+          if (nextIndex >= nextQueue.length) {
+            get().endSession();
+            return;
+          }
         }
-        if (state.mode === "practice" && nextIndex >= queue.length) {
+
+        if (state.mode === "challenge" && nextIndex >= nextQueue.length - 5) {
+          nextQueue = [...nextQueue, ...getRandomQuestions(40)];
+        }
+        if (state.mode === "practice" && nextIndex >= nextQueue.length) {
           nextQueue = [
-            ...queue,
+            ...nextQueue,
             ...pickQueue("practice", state.categoryFilter),
           ];
         }
@@ -326,6 +303,7 @@ export const useGameStore = create<GameState>()(
         const t = state.timeLeft - 1;
         if (t <= 0) {
           set({ timeLeft: 0 });
+          // end immediately when time runs out
           get().endSession();
         } else {
           set({ timeLeft: t });
@@ -336,21 +314,23 @@ export const useGameStore = create<GameState>()(
         const state = get();
         if (state.status === "finished") return;
 
-        const entry: LeaderboardEntry = {
-          id: uid("lb"),
-          playerName: state.playerName,
-          score: state.score,
-          mode: state.mode ?? "practice",
-          correctCount: state.sessionCorrect,
-          maxCombo: state.maxCombo,
-          date: new Date().toISOString(),
-        };
+        // only write leaderboard if player actually answered something
+        let leaderboard = state.leaderboard;
+        if (state.sessionTotal > 0 && state.mode) {
+          const entry: LeaderboardEntry = {
+            id: uid("lb"),
+            playerName: state.playerName,
+            score: state.score,
+            mode: state.mode,
+            correctCount: state.sessionCorrect,
+            maxCombo: state.maxCombo,
+            date: new Date().toISOString(),
+          };
+          leaderboard = [...state.leaderboard, entry]
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 50);
+        }
 
-        const leaderboard = [...state.leaderboard, entry]
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 50);
-
-        // final badge pass
         const badgeIds = evaluateBadges(
           state.history,
           state.score,
@@ -368,6 +348,7 @@ export const useGameStore = create<GameState>()(
           leaderboard,
           badges,
           currentQuestion: null,
+          timeLeft: state.mode === "challenge" ? 0 : state.timeLeft,
         });
       },
 
@@ -394,7 +375,8 @@ export const useGameStore = create<GameState>()(
       clearHistory: () => set({ history: [], leaderboard: [] }),
     }),
     {
-      name: "excel-arena-storage",
+      name: "excel-arena-storage-v2",
+      storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         playerName: s.playerName,
         history: s.history,
@@ -402,6 +384,30 @@ export const useGameStore = create<GameState>()(
         badges: s.badges,
         sheets: s.sheets,
       }),
+      merge: (persisted, current) => {
+        const p = (persisted || {}) as Partial<GameState>;
+        return {
+          ...current,
+          ...p,
+          badges: mergeBadges(p.badges),
+          history: Array.isArray(p.history) ? p.history : [],
+          leaderboard: Array.isArray(p.leaderboard) ? p.leaderboard : [],
+          sheets: {
+            webAppUrl: "",
+            enabled: false,
+            ...(p.sheets || {}),
+          },
+          // never restore mid-game session from storage
+          status: "idle" as const,
+          mode: null,
+          currentQuestion: null,
+          queue: [],
+          lastResult: null,
+        };
+      },
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

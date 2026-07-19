@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useGameStore } from "@/store/game-store";
 import { exportHistoryToExcel } from "@/lib/excel-export";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,21 @@ export function ExportPanel() {
   const [url, setUrl] = useState(sheets.webAppUrl);
   const [msg, setMsg] = useState("");
 
+  useEffect(() => {
+    setUrl(sheets.webAppUrl || "");
+  }, [sheets.webAppUrl]);
+
   const handleExport = () => {
-    exportHistoryToExcel(history, leaderboard, playerName);
-    setMsg("Đã tải file Excel thành công ✨");
+    try {
+      if (!history.length) {
+        setMsg("Chưa có lịch sử để xuất.");
+        return;
+      }
+      exportHistoryToExcel(history, leaderboard, playerName);
+      setMsg("Đã tải file Excel thành công ✨");
+    } catch {
+      setMsg("Xuất Excel thất bại. Thử lại trên trình duyệt khác.");
+    }
   };
 
   const saveSheets = () => {
