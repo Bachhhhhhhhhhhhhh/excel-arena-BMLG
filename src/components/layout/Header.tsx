@@ -5,11 +5,17 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { withBase } from "@/lib/base-path";
-import { BookOpen, Home, Play, Settings, Trophy } from "lucide-react";
+import { BookOpen, Grid3X3, Home, Play, Settings, Trophy } from "lucide-react";
 
-const links = [
+const links: {
+  href: string;
+  label: string;
+  icon: typeof Home;
+  external?: boolean;
+}[] = [
   { href: "/", label: "Trang chủ", icon: Home },
-  { href: "/play", label: "Chơi", icon: Play },
+  { href: "/quiz/", label: "Lưới 10×10", icon: Grid3X3, external: true },
+  { href: "/play", label: "Arena", icon: Play },
   { href: "/library", label: "Thư viện", icon: BookOpen },
   { href: "/leaderboard", label: "Xếp hạng", icon: Trophy },
   { href: "/settings", label: "Cài đặt", icon: Settings },
@@ -44,17 +50,16 @@ export function Header() {
         </Link>
 
         <nav className="flex items-center gap-0.5 rounded-2xl border border-[#A8D8FF]/50 bg-[#E8F4FF]/70 p-1 backdrop-blur">
-          {links.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  "relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-semibold transition sm:px-3",
-                  active ? "text-white" : "text-[#4A6FA5] hover:text-[#1E3A5F] hover:bg-white/60"
-                )}
-              >
+          {links.map(({ href, label, icon: Icon, external }) => {
+            const active = !external && pathname === href;
+            const className = cn(
+              "relative flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-sm font-semibold transition sm:px-3",
+              active
+                ? "text-white"
+                : "text-[#4A6FA5] hover:text-[#1E3A5F] hover:bg-white/60"
+            );
+            const inner = (
+              <>
                 {active && (
                   <motion.span
                     layoutId="nav-pill-ice"
@@ -66,6 +71,25 @@ export function Header() {
                   <Icon className="h-4 w-4" />
                   <span className="hidden sm:inline">{label}</span>
                 </span>
+              </>
+            );
+            if (external) {
+              return (
+                <a
+                  key={href}
+                  href={withBase(href)}
+                  className={cn(
+                    className,
+                    "bg-gradient-to-r from-[#A8D8FF]/50 to-[#7EC8FF]/40 text-[#0284c8] ring-1 ring-[#7EC8FF]/40"
+                  )}
+                >
+                  {inner}
+                </a>
+              );
+            }
+            return (
+              <Link key={href} href={href} className={className}>
+                {inner}
               </Link>
             );
           })}

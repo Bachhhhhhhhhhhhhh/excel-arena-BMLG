@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AnimeMascot } from "@/components/game/AnimeMascot";
 import { TOTAL_FUNCTIONS } from "@/data/functions";
 import { TOTAL_QUESTIONS } from "@/data/questions";
+import { withBase } from "@/lib/base-path";
 
 const features = [
   {
@@ -62,19 +63,19 @@ export default function HomePage() {
           </p>
 
           <div className="flex flex-wrap gap-3">
-            <Link href="/play">
+            <a href={withBase("/quiz/")}>
               <Button size="lg" className="animate-soft-pulse">
-                Vào đấu trường
+                Lưới 10×10 Quiz
+              </Button>
+            </a>
+            <Link href="/play">
+              <Button size="lg" variant="secondary">
+                Arena công thức
               </Button>
             </Link>
             <Link href="/library">
-              <Button size="lg" variant="secondary">
-                Thư viện hàm
-              </Button>
-            </Link>
-            <Link href="/leaderboard">
               <Button size="lg" variant="outline">
-                Xếp hạng
+                Thư viện hàm
               </Button>
             </Link>
           </div>

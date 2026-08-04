@@ -5,7 +5,8 @@ Game luyện hàm Excel (Next.js 14) · theme anime ice-blue · 180+ hàm · 4 c
 **Source:** https://github.com/Bachhhhhhhhhhhhhh/excel-arena-BMLG  
 
 **Chơi online (GitHub Pages):**  
-https://Bachhhhhhhhhhhhhh.github.io/excel-arena-BMLG/
+- Trang chủ Arena: https://Bachhhhhhhhhhhhhh.github.io/excel-arena-BMLG/  
+- **Lưới 10×10 Quiz:** https://Bachhhhhhhhhhhhhh.github.io/excel-arena-BMLG/quiz/
 
 > Sau khi bật Pages + workflow chạy xong (~2–3 phút) link mới mở được.
 

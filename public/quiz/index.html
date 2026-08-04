@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Excel Function Grid Quiz — 100 ô 10×10, upload file, luyện hàm Excel client-side"
+    />
+    <title>Excel Function Grid Quiz · 10×10 · Excel Arena</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <base href="./" />
+    <!-- SheetJS: đọc .xlsx -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+    <!-- Mammoth: đọc .docx -->
+    <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js" defer></script>
+    <!-- PDF.js -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" defer></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="brand">
+          <div class="brand-icon" aria-hidden="true">ƒx</div>
+          <div>
+            <h1>Excel Function Grid Quiz</h1>
+            <p>
+              Bảng 10×10 · 100 câu ·
+              <a
+                id="back-arena"
+                href="../"
+                style="color: #0284c8; font-weight: 700; text-decoration: none"
+                >← Excel Arena</a
+              >
+            </p>
+          </div>
+        </div>
+        <div class="stats-bar">
+          <div class="stat">Điểm: <span id="stat-score">0</span></div>
+          <div class="stat">Đã làm: <span id="stat-progress">0/100</span></div>
+          <div class="stat">Đúng: <span id="stat-correct">0</span></div>
+        </div>
+      </header>
+
+      <div class="toolbar">
+        <button type="button" class="btn btn-primary" id="btn-new-demo">
+          Ván demo (mẫu)
+        </button>
+        <button type="button" class="btn" id="btn-new-web">
+          Lấy từ Web feed
+        </button>
+        <button type="button" class="btn" id="btn-sources">
+          Upload / Ván đã lưu
+        </button>
+        <button type="button" class="btn btn-ghost" id="btn-reset">
+          Chơi lại
+        </button>
+        <input
+          id="player-name"
+          class="btn"
+          style="min-width: 120px; cursor: text"
+          value="Player 1"
+          maxlength="24"
+          title="Tên người chơi"
+        />
+        <button type="button" class="btn tab active" id="mode-practice">
+          Luyện tập
+        </button>
+        <button type="button" class="btn tab" id="mode-battle">Thi đấu</button>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Bảng câu hỏi 10 × 10</h2>
+          <div class="legend">
+            <span><i class="l-open"></i> Còn trống</span>
+            <span><i class="l-ok"></i> Đúng (khóa)</span>
+            <span><i class="l-bad"></i> Sai (khóa)</span>
+            <span><i class="l-easy"></i> Dễ 30%</span>
+            <span><i class="l-med"></i> TB 30%</span>
+            <span><i class="l-hard"></i> Khó 40%</span>
+          </div>
+        </div>
+        <div class="progress" title="Tiến độ">
+          <i id="progress-bar"></i>
+        </div>
+        <p class="muted" style="margin: 8px 0 12px">
+          Click một ô trống để trả lời. Ô đã trả lời bị khóa vĩnh viễn. Phân bố
+          độ khó: <strong>30% dễ · 30% TB · 40% khó</strong>.
+        </p>
+        <div class="board-wrap">
+          <div class="board" id="board" role="grid" aria-label="Bảng 100 câu hỏi"></div>
+        </div>
+      </section>
+
+      <div class="grid-2">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Nguồn Web (mô phỏng realtime)</h2>
+          </div>
+          <p class="muted">
+            Số câu hỏi trong kho “công khai” (cập nhật mỗi giây):
+          </p>
+          <div class="web-counter" id="web-count">0</div>
+          <p class="muted" style="margin-top: 8px">
+            Bấm <strong>Lấy từ Web feed</strong> để random 100 câu cân bằng độ
+            khó từ kho này (hoàn toàn client-side).
+          </p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Bảng xếp hạng</h2>
+          </div>
+          <ul class="list" id="lb-list"></ul>
+        </section>
+      </div>
+
+      <footer class="footer">
+        Excel Function Grid Quiz · HTML/CSS/JS thuần · Lưu localStorage · Deploy
+        GitHub Pages
+      </footer>
+    </div>
+
+    <!-- Question modal -->
+    <div class="modal-backdrop" id="modal-backdrop" role="dialog" aria-modal="true">
+      <div class="modal">
+        <h3 id="modal-title">Câu hỏi</h3>
+        <div class="badge-row" id="modal-badges"></div>
+        <p class="q-text" id="modal-question"></p>
+        <div class="options" id="modal-options"></div>
+        <input
+          type="text"
+          id="modal-formula"
+          class="formula-input"
+          style="display: none"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div class="hint-box" id="hint-box"></div>
+        <div class="explain-box" id="explain-box"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="btn-hint">Gợi ý</button>
+          <button type="button" class="btn btn-ghost" id="btn-close-modal">
+            Đóng
+          </button>
+          <button type="button" class="btn btn-primary" id="btn-submit">
+            Xác nhận
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sources / upload modal -->
+    <div class="modal-backdrop" id="source-modal" role="dialog" aria-modal="true">
+      <div class="modal">
+        <h3>Nguồn câu hỏi &amp; ván đã lưu</h3>
+        <p class="muted">
+          Upload Excel (.xlsx), Word (.docx), PDF hoặc JSON. Cột Excel khuyến
+          nghị:
+          <code>Câu hỏi | A | B | C | D | Đáp án đúng | Độ khó | Gợi ý</code>
+        </p>
+        <div class="dropzone" id="dropzone">
+          <strong>Kéo thả file vào đây</strong>
+          <p class="muted">hoặc bấm để chọn · .xlsx .docx .pdf .json .txt</p>
+          <input
+            type="file"
+            id="file-input"
+            accept=".xlsx,.xls,.csv,.docx,.pdf,.json,.txt"
+          />
+        </div>
+        <h3 style="margin-top: 18px; font-size: 1rem">Ván đã lưu</h3>
+        <div id="deck-list"></div>
+        <div class="modal-actions" style="margin-top: 12px">
+          <button type="button" class="btn btn-primary" id="btn-close-source">
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+
+    <script>
+      // PDF.js worker (CDN) + back link with GitHub Pages basePath
+      window.addEventListener("DOMContentLoaded", function () {
+        if (window.pdfjsLib) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+        }
+        var back = document.getElementById("back-arena");
+        if (back) {
+          // /excel-arena-BMLG/quiz/ → /excel-arena-BMLG/
+          var path = location.pathname.replace(/\/?quiz\/?$/, "/");
+          if (!path.endsWith("/")) path += "/";
+          back.href = path;
+        }
+      });
+    </script>
+    <script src="js/storage.js" defer></script>
+    <script src="js/questions.js" defer></script>
+    <script src="js/app.js" defer></script>
+  </body>
+</html>
