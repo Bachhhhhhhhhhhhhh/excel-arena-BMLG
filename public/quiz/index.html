@@ -16,6 +16,8 @@
     <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js" defer></script>
     <!-- PDF.js -->
     <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" defer></script>
+    <!-- PeerJS: multiplayer P2P (không cần server riêng) -->
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
   </head>
   <body>
     <div class="app">
@@ -66,8 +68,48 @@
         <button type="button" class="btn tab active" id="mode-practice">
           Luyện tập
         </button>
-        <button type="button" class="btn tab" id="mode-battle">Thi đấu</button>
+        <button type="button" class="btn tab" id="mode-online" title="Nhiều người cùng lúc online">
+          👥 Online
+        </button>
       </div>
+
+      <!-- Multiplayer room -->
+      <section class="panel mp-panel" id="mp-panel" hidden>
+        <div class="panel-head">
+          <h2>Chơi cùng lúc (Online)</h2>
+          <span class="muted">Mỗi người 1 bảng · điểm sync realtime</span>
+        </div>
+        <p class="mp-status" id="mp-status">Tạo phòng hoặc nhập mã để vào.</p>
+        <div class="mp-row">
+          <button type="button" class="btn btn-primary" id="mp-create">
+            Tạo phòng
+          </button>
+          <input
+            type="text"
+            id="mp-join-code"
+            maxlength="8"
+            placeholder="MÃ PHÒNG"
+            autocomplete="off"
+          />
+          <button type="button" class="btn" id="mp-join">Vào phòng</button>
+          <button type="button" class="btn btn-danger" id="mp-leave" hidden>
+            Rời phòng
+          </button>
+          <button type="button" class="btn" id="mp-copy" hidden>
+            Copy mã
+          </button>
+        </div>
+        <div>
+          Mã phòng:
+          <span class="mp-code" id="mp-code">————</span>
+        </div>
+        <div class="mp-players" id="mp-players"></div>
+        <p class="muted" style="margin-top: 10px">
+          Mọi người mở cùng link quiz, một người <strong>Tạo phòng</strong>,
+          gửi mã cho bạn bè → <strong>Vào phòng</strong>. Ai cũng chơi
+          <em>cùng lúc</em> trên bảng của mình; bảng điểm cập nhật realtime.
+        </p>
+      </section>
 
       <section class="panel">
         <div class="panel-head">
@@ -110,7 +152,7 @@
 
         <section class="panel">
           <div class="panel-head">
-            <h2>Bảng xếp hạng</h2>
+            <h2>BXH local / phòng</h2>
           </div>
           <ul class="list" id="lb-list"></ul>
         </section>
@@ -199,6 +241,7 @@
     </script>
     <script src="js/storage.js" defer></script>
     <script src="js/questions.js" defer></script>
+    <script src="js/multiplayer.js" defer></script>
     <script src="js/app.js" defer></script>
   </body>
 </html>

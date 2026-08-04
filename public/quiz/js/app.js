@@ -9,7 +9,7 @@
   const state = {
     sessionId: null,
     deckName: "Demo Excel 100",
-    mode: "practice", // practice | battle
+    mode: "practice", // practice | online
     playerName: "Player 1",
     questions: [], // length 100
     cells: [], // { answered, correct, usedHint, timeSec, choice }
@@ -20,8 +20,6 @@
     questionStartedAt: 0,
     usedHintThis: false,
     selectedOption: null,
-    battlePlayers: [], // multi local battle
-    battleTurn: 0,
   };
 
   // ---------- DOM ----------
@@ -52,7 +50,16 @@
     lbList: $("#lb-list"),
     playerName: $("#player-name"),
     modePractice: $("#mode-practice"),
-    modeBattle: $("#mode-battle"),
+    modeOnline: $("#mode-online"),
+    mpPanel: $("#mp-panel"),
+    mpStatus: $("#mp-status"),
+    mpCode: $("#mp-code"),
+    mpPlayers: $("#mp-players"),
+    mpCreate: $("#mp-create"),
+    mpJoin: $("#mp-join"),
+    mpJoinCode: $("#mp-join-code"),
+    mpLeave: $("#mp-leave"),
+    mpCopy: $("#mp-copy"),
     fileInput: $("#file-input"),
     dropzone: $("#dropzone"),
     sourcePanel: $("#source-modal"),
@@ -213,14 +220,27 @@
   }
 
   function renderLeaderboard() {
+    // If in multiplayer room, show live room board here too
+    if (typeof Multiplayer !== "undefined" && Multiplayer.isInRoom()) {
+      const room = Multiplayer.listPlayers();
+      el.lbList.innerHTML = room
+        .map(
+          (r, i) => `
+        <li>
+          <span>${i + 1}. ${escapeHtml(r.name)}${r.isHost ? " 👑" : ""}</span>
+          <strong>${r.score} đ · ${r.answered}/100 · ${r.correct} đúng</strong>
+        </li>`
+        )
+        .join("");
+      return;
+    }
+
     const lb = Storage.getLeaderboard();
-    // also show in-session summary at top
     const rows = [
       {
         playerName: state.playerName + " (ván này)",
         score: state.score,
         correctCount: state.correctCount,
-        timeMs: 0,
         live: true,
       },
       ...lb,
@@ -235,6 +255,49 @@
       </li>`
       )
       .join("");
+  }
+
+  function renderMpPlayers(list) {
+    if (!el.mpPlayers) return;
+    if (!list || !list.length) {
+      el.mpPlayers.innerHTML =
+        '<p class="muted">Chưa có ai trong phòng.</p>';
+      return;
+    }
+    const info = Multiplayer.getRoomInfo();
+    el.mpPlayers.innerHTML = list
+      .map((p, i) => {
+        const me = p.id === info.selfId;
+        return `
+        <div class="mp-player${me ? " me" : ""}">
+          <span class="rank">#${i + 1}</span>
+          <span class="name">
+            <span class="mp-dot"></span>${escapeHtml(p.name)}
+            ${p.isHost ? '<span class="tag">HOST</span>' : ""}
+            ${me ? '<span class="tag">BẠN</span>' : ""}
+          </span>
+          <span class="stats">${p.score}đ · ${p.answered}/100 · ${p.correct}✓</span>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function syncMultiplayerStats() {
+    if (typeof Multiplayer === "undefined" || !Multiplayer.isInRoom()) return;
+    Multiplayer.setSelfStats({
+      name: state.playerName,
+      score: state.score,
+      correct: state.correctCount,
+      answered: state.answeredCount,
+    });
+  }
+
+  function setMpUiInRoom(inRoom, code) {
+    if (el.mpLeave) el.mpLeave.hidden = !inRoom;
+    if (el.mpCopy) el.mpCopy.hidden = !inRoom;
+    if (el.mpCreate) el.mpCreate.disabled = inRoom;
+    if (el.mpJoin) el.mpJoin.disabled = inRoom;
+    if (el.mpCode) el.mpCode.textContent = code || "————";
   }
 
   function escapeHtml(s) {
@@ -436,16 +499,10 @@
     el.btnHint.disabled = true;
     el.btnSubmit.textContent = "Đã khóa ô";
 
-    // battle: rotate name label
-    if (state.mode === "battle" && state.battlePlayers.length > 1) {
-      state.battleTurn =
-        (state.battleTurn + 1) % state.battlePlayers.length;
-      toast(`Lượt tiếp: ${state.battlePlayers[state.battleTurn]}`);
-    }
-
     persist();
     renderBoard();
     renderStats();
+    syncMultiplayerStats();
 
     // finish?
     if (state.answeredCount >= 100) {
@@ -473,34 +530,103 @@
   // ---------- Modes ----------
   function updateModeUI() {
     el.modePractice.classList.toggle("active", state.mode === "practice");
-    el.modeBattle.classList.toggle("active", state.mode === "battle");
+    el.modeOnline.classList.toggle("active", state.mode === "online");
+    if (el.mpPanel) {
+      el.mpPanel.hidden = state.mode !== "online";
+    }
   }
 
   function setMode(mode) {
     state.mode = mode;
-    if (mode === "battle") {
-      const names = prompt(
-        "Nhập tên người chơi, cách nhau bởi dấu phẩy (tối thiểu 2):",
-        `${state.playerName}, Player 2`
-      );
-      if (names) {
-        state.battlePlayers = names
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        if (state.battlePlayers.length < 2) {
-          state.battlePlayers = [state.playerName, "Player 2"];
-        }
-        state.battleTurn = 0;
-        state.playerName = state.battlePlayers[0];
-        el.playerName.value = state.playerName;
-        toast(`Thi đấu: ${state.battlePlayers.join(" vs ")}`);
-      } else {
-        state.mode = "practice";
-      }
+    if (mode === "online") {
+      toast("Online: tạo phòng hoặc nhập mã — mọi người chơi CÙNG LÚC");
     }
     updateModeUI();
     persist();
+  }
+
+  function wireMultiplayer() {
+    if (typeof Multiplayer === "undefined") return;
+
+    Multiplayer.on("status", (msg) => {
+      if (el.mpStatus) {
+        el.mpStatus.textContent = msg;
+        el.mpStatus.classList.remove("err");
+      }
+    });
+    Multiplayer.on("error", (msg) => {
+      if (el.mpStatus) {
+        el.mpStatus.textContent = msg;
+        el.mpStatus.classList.add("err");
+      }
+      toast(msg);
+    });
+    Multiplayer.on("roster", (list, meta) => {
+      renderMpPlayers(list);
+      renderLeaderboard();
+      setMpUiInRoom(!!meta.roomCode, meta.roomCode);
+    });
+
+    el.mpCreate?.addEventListener("click", async () => {
+      try {
+        state.playerName = el.playerName.value.trim() || "Player 1";
+        el.mpCreate.disabled = true;
+        const { roomCode } = await Multiplayer.createRoom(state.playerName);
+        setMpUiInRoom(true, roomCode);
+        syncMultiplayerStats();
+        // link mời (cùng URL quiz + ?room=)
+        try {
+          const u = new URL(location.href);
+          u.searchParams.set("room", roomCode);
+          history.replaceState(null, "", u.toString());
+        } catch {
+          /* */
+        }
+        toast("Phòng " + roomCode + " — gửi mã / link cho bạn bè!");
+      } catch (e) {
+        toast(e.message || "Không tạo được phòng");
+        el.mpCreate.disabled = false;
+      }
+    });
+
+    el.mpJoin?.addEventListener("click", async () => {
+      try {
+        state.playerName = el.playerName.value.trim() || "Player 1";
+        const code = el.mpJoinCode.value.trim();
+        el.mpJoin.disabled = true;
+        const { roomCode } = await Multiplayer.joinRoom(code, state.playerName);
+        setMpUiInRoom(true, roomCode);
+        syncMultiplayerStats();
+        toast("Đã vào phòng " + roomCode);
+      } catch (e) {
+        toast(e.message || "Không vào được phòng");
+        el.mpJoin.disabled = false;
+      }
+    });
+
+    el.mpLeave?.addEventListener("click", () => {
+      Multiplayer.leave();
+      setMpUiInRoom(false, null);
+      el.mpCreate.disabled = false;
+      el.mpJoin.disabled = false;
+      renderMpPlayers([]);
+      renderLeaderboard();
+    });
+
+    el.mpCopy?.addEventListener("click", async () => {
+      const info = Multiplayer.getRoomInfo();
+      if (!info.roomCode) return;
+      try {
+        await navigator.clipboard.writeText(info.roomCode);
+        toast("Đã copy mã " + info.roomCode);
+      } catch {
+        prompt("Copy mã phòng:", info.roomCode);
+      }
+    });
+
+    el.mpJoinCode?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") el.mpJoin.click();
+    });
   }
 
   // ---------- Source modal ----------
@@ -563,11 +689,13 @@
     el.playerName.addEventListener("change", () => {
       state.playerName = el.playerName.value.trim() || "Player 1";
       persist();
+      syncMultiplayerStats();
       renderLeaderboard();
     });
 
     el.modePractice.addEventListener("click", () => setMode("practice"));
-    el.modeBattle.addEventListener("click", () => setMode("battle"));
+    el.modeOnline.addEventListener("click", () => setMode("online"));
+    wireMultiplayer();
 
     el.dropzone.addEventListener("click", () => el.fileInput.click());
     el.fileInput.addEventListener("change", (e) => handleFiles(e.target.files));
@@ -617,11 +745,26 @@
     }, 1000);
     el.webCount.textContent = String(Questions.getWebCount());
 
+    // heartbeat multiplayer scores (mượt khi nhiều tab)
+    setInterval(() => {
+      if (Multiplayer.isInRoom()) syncMultiplayerStats();
+    }, 3000);
+
     if (!restoreLast()) {
       newSession(Questions.buildFromSample(), "Demo Excel 100");
     }
     renderDecks();
     renderLeaderboard();
+    updateModeUI();
+
+    // deep-link ?room=ABC123
+    const params = new URLSearchParams(location.search);
+    const roomQ = params.get("room");
+    if (roomQ) {
+      setMode("online");
+      el.mpJoinCode.value = roomQ.toUpperCase();
+      toast("Nhập tên rồi bấm Vào phòng: " + roomQ.toUpperCase());
+    }
   }
 
   if (document.readyState === "loading") {
