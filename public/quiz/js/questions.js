@@ -42,12 +42,40 @@ const Questions = (() => {
   }
 
   async function loadSampleBank() {
-    try {
-      const res = await fetch("data/sample-questions.json");
-      if (!res.ok) throw new Error("fetch fail");
-      sampleBank = await res.json();
-    } catch {
-      // fallback minimal if file missing (file:// protocol)
+    const urls = [
+      "data/sample-questions.json",
+      "./data/sample-questions.json",
+      // absolute from site root (GitHub Pages project)
+      (function () {
+        try {
+          const p = location.pathname.replace(/\/?[^/]*$/, "/");
+          // .../quiz/ or .../quiz/index.html → .../quiz/data/
+          const base = location.pathname.includes("/quiz")
+            ? location.pathname.replace(/\/quiz.*/, "/quiz/")
+            : p;
+          return base + "data/sample-questions.json";
+        } catch {
+          return null;
+        }
+      })(),
+    ].filter(Boolean);
+
+    let loaded = false;
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, { cache: "no-cache" });
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (Array.isArray(data) && data.length) {
+          sampleBank = data;
+          loaded = true;
+          break;
+        }
+      } catch {
+        /* try next */
+      }
+    }
+    if (!loaded) {
       sampleBank = generateSynthetic(40, "easy")
         .concat(generateSynthetic(40, "medium"))
         .concat(generateSynthetic(50, "hard"));

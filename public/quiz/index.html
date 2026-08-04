@@ -8,16 +8,15 @@
       content="Excel Function Grid Quiz — 100 ô 10×10, upload file, luyện hàm Excel client-side"
     />
     <title>Excel Function Grid Quiz · 10×10 · Excel Arena</title>
-    <link rel="stylesheet" href="css/style.css" />
-    <base href="./" />
+    <link rel="stylesheet" href="./css/style.css" />
     <!-- SheetJS: đọc .xlsx -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- Mammoth: đọc .docx -->
-    <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <!-- PDF.js -->
-    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" defer></script>
-    <!-- PeerJS: multiplayer P2P (không cần server riêng) -->
-    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+    <!-- PeerJS: multiplayer P2P -->
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   </head>
   <body>
     <div class="app">
@@ -224,24 +223,20 @@
     <div class="toast" id="toast" role="status"></div>
 
     <script>
-      // PDF.js worker (CDN) + back link with GitHub Pages basePath
-      window.addEventListener("DOMContentLoaded", function () {
-        if (window.pdfjsLib) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc =
-            "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
-        }
-        var back = document.getElementById("back-arena");
-        if (back) {
-          // /excel-arena-BMLG/quiz/ → /excel-arena-BMLG/
-          var path = location.pathname.replace(/\/?quiz\/?$/, "/");
-          if (!path.endsWith("/")) path += "/";
-          back.href = path;
-        }
+      if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+      }
+      window.addEventListener("error", function (e) {
+        console.error("Page error:", e.message, e.filename, e.lineno);
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        console.error("Promise error:", e.reason);
       });
     </script>
-    <script src="js/storage.js" defer></script>
-    <script src="js/questions.js" defer></script>
-    <script src="js/multiplayer.js" defer></script>
-    <script src="js/app.js" defer></script>
+    <script src="./js/storage.js"></script>
+    <script src="./js/questions.js"></script>
+    <script src="./js/multiplayer.js"></script>
+    <script src="./js/app.js"></script>
   </body>
 </html>

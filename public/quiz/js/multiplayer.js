@@ -1,34 +1,23 @@
 /**
- * Multiplayer realtime (cùng lúc) qua PeerJS — không cần backend.
- * Host tạo phòng → mã 6 ký tự. Mọi người join, mỗi người chơi board riêng,
- * bảng điểm sync realtime.
+ * Multiplayer realtime — hybrid:
+ * 1) BroadcastChannel + localStorage (cùng máy / nhiều tab) — luôn ổn
+ * 2) PeerJS P2P (máy khác / mạng khác) — best effort
  */
 const Multiplayer = (() => {
   const PREFIX = "efgq";
-  /** @type {import('peerjs').Peer | null} */
+  const LS_ROOM = "efg_mp_rooms_v1";
+
   let peer = null;
-  /** @type {Map<string, any>} peerId -> DataConnection (host only for guests; guest has 1 to host) */
   const conns = new Map();
-  let role = null; // 'host' | 'guest' | null
+  let role = null;
   let roomCode = null;
   let selfId = null;
-  /** @type {Record<string, Player>} */
   let players = {};
+  let bc = null;
+  let pollIv = null;
   let onRoster = () => {};
   let onStatus = () => {};
   let onError = () => {};
-
-  /**
-   * @typedef {Object} Player
-   * @property {string} id
-   * @property {string} name
-   * @property {number} score
-   * @property {number} correct
-   * @property {number} answered
-   * @property {boolean} online
-   * @property {boolean} [isHost]
-   * @property {number} [updatedAt]
-   */
 
   function randomCode(len = 6) {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -41,113 +30,209 @@ const Multiplayer = (() => {
     return PREFIX + String(code).toUpperCase().replace(/[^A-Z0-9]/g, "");
   }
 
-  function getSelf() {
-    return players[selfId] || null;
-  }
-
   function listPlayers() {
+    const now = Date.now();
     return Object.values(players)
-      .filter((p) => p.online)
-      .sort((a, b) => b.score - a.score || b.correct - a.correct || a.name.localeCompare(b.name));
+      .filter((p) => p && p.online && now - (p.updatedAt || 0) < 45000)
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          b.correct - a.correct ||
+          String(a.name).localeCompare(String(b.name))
+      );
   }
 
-  function setSelfStats({ name, score, correct, answered }) {
-    if (!selfId || !players[selfId]) return;
-    if (name != null) players[selfId].name = name;
-    if (score != null) players[selfId].score = score;
-    if (correct != null) players[selfId].correct = correct;
-    if (answered != null) players[selfId].answered = answered;
-    players[selfId].updatedAt = Date.now();
-    broadcastUpdate();
+  function emitRoster() {
     onRoster(listPlayers(), { role, roomCode, selfId });
   }
 
-  function broadcastUpdate() {
+  function readRoomStore(code) {
+    try {
+      const all = JSON.parse(localStorage.getItem(LS_ROOM) || "{}");
+      return all[code] || { players: {}, updatedAt: 0 };
+    } catch {
+      return { players: {}, updatedAt: 0 };
+    }
+  }
+
+  function writeRoomStore(code, data) {
+    try {
+      const all = JSON.parse(localStorage.getItem(LS_ROOM) || "{}");
+      // dọn phòng cũ > 2h
+      const now = Date.now();
+      Object.keys(all).forEach((k) => {
+        if (now - (all[k].updatedAt || 0) > 2 * 3600 * 1000) delete all[k];
+      });
+      all[code] = { ...data, updatedAt: now };
+      localStorage.setItem(LS_ROOM, JSON.stringify(all));
+    } catch (e) {
+      console.warn("room store write fail", e);
+    }
+  }
+
+  function mergePlayers(incoming) {
+    if (!Array.isArray(incoming) && typeof incoming === "object") {
+      incoming = Object.values(incoming);
+    }
+    (incoming || []).forEach((p) => {
+      if (!p || !p.id) return;
+      const prev = players[p.id];
+      if (!prev || (p.updatedAt || 0) >= (prev.updatedAt || 0)) {
+        players[p.id] = { ...prev, ...p, online: p.online !== false };
+      }
+    });
+  }
+
+  function publishLocal() {
+    if (!roomCode || !selfId) return;
     const me = players[selfId];
     if (!me) return;
-    const msg = { type: "update", player: me };
 
-    if (role === "host") {
-      // update self in roster and push full roster
-      broadcastRoster();
-    } else if (role === "guest") {
-      // send to host only
-      conns.forEach((c) => {
-        if (c.open) c.send(msg);
-      });
+    // localStorage bus
+    const store = readRoomStore(roomCode);
+    store.players = store.players || {};
+    store.players[selfId] = { ...me, updatedAt: Date.now() };
+    // drop stale
+    const now = Date.now();
+    Object.keys(store.players).forEach((id) => {
+      if (now - (store.players[id].updatedAt || 0) > 45000) {
+        delete store.players[id];
+      }
+    });
+    writeRoomStore(roomCode, store);
+    mergePlayers(Object.values(store.players));
+
+    // BroadcastChannel
+    try {
+      if (bc) {
+        bc.postMessage({
+          type: "roster",
+          roomCode,
+          players: Object.values(players),
+        });
+      }
+    } catch {
+      /* */
     }
+
+    // PeerJS
+    peerBroadcast();
+    emitRoster();
   }
 
-  function broadcastRoster() {
+  function peerBroadcast() {
     const msg = {
       type: "roster",
-      players: Object.values(players),
       roomCode,
+      players: Object.values(players),
     };
     conns.forEach((c) => {
-      if (c.open) c.send(msg);
+      try {
+        if (c.open) c.send(msg);
+      } catch {
+        /* */
+      }
     });
-    onRoster(listPlayers(), { role, roomCode, selfId });
   }
 
-  function handleMessage(data, fromPeerId) {
-    if (!data || !data.type) return;
+  function handleRemoteRoster(data) {
+    if (!data || data.roomCode !== roomCode) return;
+    mergePlayers(data.players);
+    // ensure self not wiped
+    if (selfId && players[selfId]) {
+      players[selfId].online = true;
+    }
+    emitRoster();
+  }
 
-    if (data.type === "join" && role === "host") {
-      const p = data.player;
-      if (!p || !p.id) return;
-      players[p.id] = { ...p, online: true, updatedAt: Date.now() };
-      broadcastRoster();
-      return;
+  function openBroadcast(code) {
+    closeBroadcast();
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        bc = new BroadcastChannel("efg_room_" + code);
+        bc.onmessage = (ev) => {
+          const data = ev.data;
+          if (!data) return;
+          if (data.type === "roster") handleRemoteRoster(data);
+          if (data.type === "ping" && data.player) {
+            mergePlayers([data.player]);
+            emitRoster();
+          }
+        };
+      }
+    } catch {
+      bc = null;
     }
 
-    if (data.type === "update" && role === "host") {
-      const p = data.player;
-      if (!p || !p.id) return;
-      players[p.id] = {
-        ...(players[p.id] || {}),
-        ...p,
-        online: true,
-        updatedAt: Date.now(),
-      };
-      broadcastRoster();
-      return;
-    }
+    // poll localStorage every 1.2s (cross-tab + same-browser profiles share storage)
+    clearInterval(pollIv);
+    pollIv = setInterval(() => {
+      if (!roomCode) return;
+      const store = readRoomStore(roomCode);
+      mergePlayers(Object.values(store.players || {}));
+      // re-publish self lightly
+      if (selfId && players[selfId]) {
+        players[selfId].updatedAt = Date.now();
+        store.players = store.players || {};
+        store.players[selfId] = players[selfId];
+        writeRoomStore(roomCode, store);
+      }
+      emitRoster();
+    }, 1200);
+  }
 
-    if (data.type === "roster" && role === "guest") {
-      players = {};
-      (data.players || []).forEach((p) => {
-        players[p.id] = p;
-      });
-      onRoster(listPlayers(), { role, roomCode, selfId });
-      return;
+  function closeBroadcast() {
+    try {
+      if (bc) bc.close();
+    } catch {
+      /* */
     }
-
-    if (data.type === "ping") {
-      // ignore
-    }
+    bc = null;
+    clearInterval(pollIv);
+    pollIv = null;
   }
 
   function wireConn(conn) {
-    conn.on("data", (data) => handleMessage(data, conn.peer));
-    conn.on("close", () => {
-      conns.delete(conn.peer);
-      if (role === "host") {
-        // mark offline by peer mapping: guest peer id stored as player peerKey
-        Object.keys(players).forEach((id) => {
-          if (players[id].peerKey === conn.peer) {
-            players[id].online = false;
-          }
-        });
-        broadcastRoster();
-      } else if (role === "guest") {
-        onStatus("Mất kết nối host. Thử join lại.");
-        onError("disconnected");
+    if (conn.__efgWired) return;
+    conn.__efgWired = true;
+
+    conn.on("data", (data) => {
+      if (!data || !data.type) return;
+      if (data.type === "join" || data.type === "update") {
+        if (data.player) {
+          mergePlayers([
+            {
+              ...data.player,
+              peerKey: conn.peer,
+              online: true,
+              updatedAt: Date.now(),
+            },
+          ]);
+          if (role === "host") publishLocal();
+          else emitRoster();
+        }
+      }
+      if (data.type === "roster") handleRemoteRoster(data);
+      if (data.type === "leave" && data.id) {
+        if (players[data.id]) players[data.id].online = false;
+        if (role === "host") publishLocal();
+        else emitRoster();
       }
     });
-    conn.on("error", (err) => {
-      console.warn("conn error", err);
+
+    conn.on("close", () => {
+      conns.delete(conn.peer);
+      Object.keys(players).forEach((id) => {
+        if (players[id].peerKey === conn.peer) players[id].online = false;
+      });
+      if (role === "host") publishLocal();
+      if (role === "guest") {
+        onStatus("Mất kết nối P2P — vẫn sync qua tab/local nếu cùng máy.");
+      }
+      emitRoster();
     });
+
+    conn.on("error", (err) => console.warn("peer conn", err));
   }
 
   function destroyPeer() {
@@ -163,177 +248,261 @@ const Multiplayer = (() => {
       /* */
     }
     peer = null;
+  }
+
+  function fullReset() {
+    destroyPeer();
+    closeBroadcast();
     role = null;
     roomCode = null;
     selfId = null;
     players = {};
   }
 
-  /**
-   * Host tạo phòng
-   */
-  function createRoom(playerName) {
-    return new Promise((resolve, reject) => {
-      destroyPeer();
+  function makeSelf(name, isHost, peerKey) {
+    selfId =
+      (isHost ? "h_" : "g_") +
+      Math.random().toString(36).slice(2, 10) +
+      Date.now().toString(36).slice(-4);
+    players[selfId] = {
+      id: selfId,
+      peerKey: peerKey || selfId,
+      name: name || (isHost ? "Host" : "Player"),
+      score: 0,
+      correct: 0,
+      answered: 0,
+      online: true,
+      isHost: !!isHost,
+      updatedAt: Date.now(),
+    };
+  }
+
+  function startLocalRoom(code, name, isHost) {
+    roomCode = code;
+    role = isHost ? "host" : "guest";
+    makeSelf(name, isHost);
+    openBroadcast(code);
+    publishLocal();
+    onStatus(
+      isHost
+        ? "Phòng " + code + " sẵn sàng (local + P2P)"
+        : "Đã vào phòng " + code + " — chơi cùng lúc!"
+    );
+    emitRoster();
+  }
+
+  function tryPeerHost(code, name) {
+    return new Promise((resolve) => {
       if (typeof Peer === "undefined") {
-        reject(new Error("PeerJS chưa load. Kiểm tra mạng/CDN."));
+        resolve(false);
+        return;
+      }
+      let settled = false;
+      const hid = hostPeerId(code);
+      try {
+        peer = new Peer(hid, {
+          debug: 0,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+            ],
+          },
+        });
+      } catch {
+        resolve(false);
         return;
       }
 
-      const code = randomCode(6);
-      const hid = hostPeerId(code);
-      onStatus("Đang tạo phòng…");
-
-      peer = new Peer(hid, {
-        debug: 0,
-        config: {
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" },
-          ],
-        },
-      });
+      const t = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(false);
+        }
+      }, 8000);
 
       peer.on("open", (id) => {
-        role = "host";
-        roomCode = code;
-        selfId = "host-" + id;
-        players[selfId] = {
-          id: selfId,
-          peerKey: id,
-          name: playerName || "Host",
-          score: 0,
-          correct: 0,
-          answered: 0,
-          online: true,
-          isHost: true,
-          updatedAt: Date.now(),
-        };
-        onStatus("Phòng sẵn sàng · mã " + code);
-        onRoster(listPlayers(), { role, roomCode, selfId });
-        resolve({ roomCode: code, role: "host" });
+        if (players[selfId]) players[selfId].peerKey = id;
+        peer.on("connection", (conn) => {
+          conns.set(conn.peer, conn);
+          conn.on("open", () => {
+            wireConn(conn);
+            try {
+              conn.send({
+                type: "roster",
+                roomCode,
+                players: Object.values(players),
+              });
+            } catch {
+              /* */
+            }
+          });
+          wireConn(conn);
+        });
+        if (!settled) {
+          settled = true;
+          clearTimeout(t);
+          resolve(true);
+        }
       });
 
-      peer.on("connection", (conn) => {
-        conns.set(conn.peer, conn);
+      peer.on("error", (err) => {
+        console.warn("peer host error", err);
+        if (!settled) {
+          settled = true;
+          clearTimeout(t);
+          try {
+            peer.destroy();
+          } catch {
+            /* */
+          }
+          peer = null;
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  function tryPeerJoin(code) {
+    return new Promise((resolve) => {
+      if (typeof Peer === "undefined") {
+        resolve(false);
+        return;
+      }
+      let settled = false;
+      const hid = hostPeerId(code);
+      try {
+        peer = new Peer({
+          debug: 0,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+            ],
+          },
+        });
+      } catch {
+        resolve(false);
+        return;
+      }
+
+      const t = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve(false);
+        }
+      }, 10000);
+
+      peer.on("open", (myId) => {
+        if (players[selfId]) players[selfId].peerKey = myId;
+        const conn = peer.connect(hid, { reliable: true });
+        conns.set(hid, conn);
         conn.on("open", () => {
           wireConn(conn);
-          // send current roster immediately
-          conn.send({
-            type: "roster",
-            players: Object.values(players),
-            roomCode,
-          });
+          try {
+            conn.send({ type: "join", player: players[selfId] });
+          } catch {
+            /* */
+          }
+          if (!settled) {
+            settled = true;
+            clearTimeout(t);
+            resolve(true);
+          }
+        });
+        conn.on("error", () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(t);
+            resolve(false);
+          }
         });
         wireConn(conn);
       });
 
-      peer.on("error", (err) => {
-        console.error(err);
-        const msg = err?.type === "unavailable-id"
-          ? "Mã phòng trùng, thử tạo lại."
-          : err?.message || String(err);
-        onError(msg);
-        onStatus("Lỗi: " + msg);
-        reject(err);
+      peer.on("error", () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(t);
+          resolve(false);
+        }
       });
     });
   }
 
-  /**
-   * Guest join phòng
-   */
-  function joinRoom(code, playerName) {
-    return new Promise((resolve, reject) => {
-      destroyPeer();
-      if (typeof Peer === "undefined") {
-        reject(new Error("PeerJS chưa load."));
-        return;
-      }
+  async function createRoom(playerName) {
+    fullReset();
+    const code = randomCode(6);
+    onStatus("Đang tạo phòng " + code + "…");
+    startLocalRoom(code, playerName, true);
+    // P2P thêm (không chặn nếu fail)
+    const ok = await tryPeerHost(code, playerName);
+    onStatus(
+      ok
+        ? "Phòng " + code + " · P2P + local OK — mời bạn bè!"
+        : "Phòng " + code + " · local OK (P2P hạn chế mạng)"
+    );
+    return { roomCode: code, role: "host" };
+  }
 
-      const clean = String(code || "")
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, "");
-      if (clean.length < 4) {
-        reject(new Error("Mã phòng không hợp lệ"));
-        return;
-      }
+  async function joinRoom(code, playerName) {
+    const clean = String(code || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    if (clean.length < 4) throw new Error("Mã phòng không hợp lệ (ít nhất 4 ký tự)");
 
-      const hid = hostPeerId(clean);
-      onStatus("Đang vào phòng " + clean + "…");
+    fullReset();
+    onStatus("Đang vào phòng " + clean + "…");
+    startLocalRoom(clean, playerName, false);
 
-      peer = new Peer({
-        debug: 0,
-        config: {
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" },
-          ],
-        },
-      });
+    // nếu local đã có host players → ok
+    const store = readRoomStore(clean);
+    const count = Object.keys(store.players || {}).length;
+    const p2p = await tryPeerJoin(clean);
 
-      peer.on("open", (myId) => {
-        role = "guest";
-        roomCode = clean;
-        selfId = "g-" + myId;
-        players[selfId] = {
-          id: selfId,
-          peerKey: myId,
-          name: playerName || "Guest",
-          score: 0,
-          correct: 0,
-          answered: 0,
-          online: true,
-          isHost: false,
-          updatedAt: Date.now(),
-        };
+    if (count <= 1 && !p2p) {
+      onStatus(
+        "Đã join local. Nếu host ở máy khác mà không thấy nhau, kiểm tra host còn mở tab và cùng mã."
+      );
+    } else {
+      onStatus("Đã vào phòng " + clean + " — chơi cùng lúc!");
+    }
+    publishLocal();
+    return { roomCode: clean, role: "guest" };
+  }
 
-        const conn = peer.connect(hid, { reliable: true });
-        conns.set(hid, conn);
-
-        const timeout = setTimeout(() => {
-          reject(new Error("Không kết nối được host (sai mã / host offline)."));
-        }, 12000);
-
-        conn.on("open", () => {
-          clearTimeout(timeout);
-          wireConn(conn);
-          conn.send({ type: "join", player: players[selfId] });
-          onStatus("Đã vào phòng " + clean + " — chơi cùng lúc!");
-          onRoster(listPlayers(), { role, roomCode, selfId });
-          resolve({ roomCode: clean, role: "guest" });
-        });
-
-        conn.on("error", (err) => {
-          clearTimeout(timeout);
-          reject(err);
-        });
-      });
-
-      peer.on("error", (err) => {
-        onError(err?.message || String(err));
-        reject(err);
-      });
-    });
+  function setSelfStats({ name, score, correct, answered }) {
+    if (!selfId) return;
+    if (!players[selfId]) return;
+    if (name != null) players[selfId].name = String(name).slice(0, 24);
+    if (score != null) players[selfId].score = Number(score) || 0;
+    if (correct != null) players[selfId].correct = Number(correct) || 0;
+    if (answered != null) players[selfId].answered = Number(answered) || 0;
+    players[selfId].updatedAt = Date.now();
+    players[selfId].online = true;
+    publishLocal();
   }
 
   function leave() {
-    if (role === "guest") {
-      conns.forEach((c) => {
-        try {
-          c.send({ type: "leave", id: selfId });
-        } catch {
-          /* */
-        }
-      });
+    if (roomCode && selfId) {
+      try {
+        conns.forEach((c) => {
+          if (c.open) c.send({ type: "leave", id: selfId });
+        });
+      } catch {
+        /* */
+      }
+      const store = readRoomStore(roomCode);
+      if (store.players) delete store.players[selfId];
+      writeRoomStore(roomCode, store);
     }
-    destroyPeer();
+    fullReset();
     onStatus("Đã rời phòng");
-    onRoster([], { role: null, roomCode: null, selfId: null });
+    emitRoster();
   }
 
   function isInRoom() {
-    return !!role && !!roomCode;
+    return !!(role && roomCode && selfId);
   }
 
   function getRoomInfo() {
@@ -341,6 +510,7 @@ const Multiplayer = (() => {
   }
 
   function on(event, fn) {
+    if (typeof fn !== "function") return;
     if (event === "roster") onRoster = fn;
     if (event === "status") onStatus = fn;
     if (event === "error") onError = fn;
